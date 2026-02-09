@@ -1,8 +1,9 @@
 import discord
-import yaml
 import os
 from discord.ext import commands
 from discord import app_commands
+from utils.wrapper import log_execution
+from utils.config import ConfigManager
 
 # Tehlikeli izinlerin listesi (Bunlar varsa uyarı verilecek)
 DANGEROUS_PERMISSIONS = [
@@ -15,19 +16,6 @@ DANGEROUS_PERMISSIONS = [
     "manage_webhooks",
     "manage_expressions"
 ]
-
-class AttendanceConfig:
-    @staticmethod
-    def load_whitelist():
-        if not os.path.exists('whitelist.yml'):
-            return []
-        try:
-            with open('whitelist.yml', 'r', encoding='utf-8') as f:
-                data = yaml.safe_load(f)
-                return data.get('whitelist', []) if data else []
-        except Exception as e:
-            print(f"Whitelist yüklenirken hata: {e}")
-            return []
 
 class ConfirmView(discord.ui.View):
     def __init__(self, timeout=30):
@@ -50,25 +38,27 @@ class Attendance(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    def is_whitelisted(self, user_id):
-        whitelist = AttendanceConfig.load_whitelist()
-        return user_id in whitelist
-
     @app_commands.command(name="attendance", description="Ses kanalındaki kullanıcılara rol verir.")
     @app_commands.describe(
         channel="Hedef ses kanalı",
         role_name="Verilecek rolün adı (Yoksa oluşturulur)"
     )
+    @log_execution("attendance")
     async def attendance(self, interaction: discord.Interaction, channel: discord.VoiceChannel, role_name: str):
-        # 1. Whitelist Kontrolü
-        if not self.is_whitelisted(interaction.user.id):
-            await interaction.response.send_message("⛔ Bu komutu kullanma yetkiniz yok.", ephemeral=True)
-            return
+        # 1. Whitelist Kontrolü (Yeni ConfigManager ile)
+        # Interaction.user normalde Member döner ama emin olalım
+        user = interaction.user
+        if not isinstance(user, discord.Member):
+            user = interaction.guild.get_member(user.id)
+
+        if not ConfigManager.can_use_command(user, "attendance"):
+             await interaction.response.send_message("⛔ Bu komutu kullanma yetkiniz yok.", ephemeral=True)
+             return {"status": "UNAUTHORIZED", "reason": "User/Role not in config whitelist"}
 
         # 2. Ses kanalı boş mu?
         if not channel.members:
             await interaction.response.send_message(f"⚠️ {channel.mention} kanalında kimse yok.", ephemeral=True)
-            return
+            return {"status": "ABORTED", "reason": "Empty channel"}
 
         guild = interaction.guild
         target_role = discord.utils.get(guild.roles, name=role_name)
@@ -82,7 +72,7 @@ class Attendance(commands.Cog):
             # KESİN YASAK: Administrator
             if permissions.administrator:
                 await interaction.response.send_message("⛔ **Yönetici (Administrator)** yetkisine sahip bir rol verilemez.", ephemeral=True)
-                return
+                return {"status": "ABORTED", "reason": "Target role is admin"}
 
             # UYARI GEREKTİREN: Tehlikeli izinler
             dangerous_found = [perm for perm, value in permissions if value and perm in DANGEROUS_PERMISSIONS]
@@ -100,10 +90,10 @@ class Attendance(commands.Cog):
                 
                 if view.value is None:
                     await interaction.followup.send("Zaman aşımı. İşlem iptal edildi.", ephemeral=True)
-                    return
+                    return {"status": "CANCELLED", "reason": "Timeout on dangerous role confirmation"}
                 elif view.value is False:
                     await interaction.followup.send("İşlem iptal edildi.", ephemeral=True)
-                    return
+                    return {"status": "CANCELLED", "reason": "User cancelled dangerous role confirmation"}
                 # Onay verildiyse devam et
                 
         else:
@@ -121,7 +111,7 @@ class Attendance(commands.Cog):
                     await interaction.response.send_message("⛔ Rol oluşturmak için yetkim yetersiz.", ephemeral=True)
                 else:
                     await interaction.followup.send("⛔ Rol oluşturmak için yetkim yetersiz.", ephemeral=True)
-                return
+                return {"status": "FAILED", "reason": "Missing permissions to create role"}
 
         # defer çağrılmadıysa çağır (rol var ve güvenliyse buraya düşer)
         if not interaction.response.is_done():
@@ -132,6 +122,7 @@ class Attendance(commands.Cog):
         failed_count = 0
         
         members = channel.members
+        processed_users = [] # Log için kullanıcı listesi
         
         status_msg = await interaction.followup.send(f"⏳ {len(members)} kişiye rol veriliyor...", ephemeral=True)
 
@@ -145,6 +136,7 @@ class Attendance(commands.Cog):
             try:
                 await member.add_roles(target_role, reason=f"Attendance: {interaction.user} tarafından verildi.")
                 given_count += 1
+                processed_users.append({"id": member.id, "name": member.name})
             except discord.Forbidden:
                 failed_count += 1
             except Exception as e:
@@ -164,6 +156,19 @@ class Attendance(commands.Cog):
             result_message += f"\n❌ Başarısız: {failed_count} (Yetkim yetmemiş olabilir)"
 
         await interaction.followup.send(result_message, ephemeral=True)
+        
+        # LOGLAMA İÇİN DEĞER DÖNÜYORUZ
+        return {
+            "channel_id": channel.id,
+            "channel_name": channel.name,
+            "role_id": target_role.id,
+            "role_name": target_role.name,
+            "role_created": role_created,
+            "given_count": given_count,
+            "failed_count": failed_count,
+            "users": processed_users, 
+            "result_message": result_message
+        }
 
 async def setup(bot):
     await bot.add_cog(Attendance(bot))
