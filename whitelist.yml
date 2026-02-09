@@ -1,0 +1,5 @@
+# Bu dosyaya komutu kullanmasına izin verilen kullanıcıların ID'lerini ekleyin.
+# Örnek format:
+whitelist:
+  - 999999999999999999
+  - 1111111111111111111
