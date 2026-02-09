@@ -1,5 +1,6 @@
 import sqlite3
 import json
+import os
 from datetime import datetime
 
 class Database:
@@ -8,7 +9,11 @@ class Database:
     def __new__(cls, db_path='database.db'):
         if cls._instance is None:
             cls._instance = super(Database, cls).__new__(cls)
-            cls._instance.db_path = db_path
+            
+            # Ensure Absolute Path
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            cls._instance.db_path = os.path.join(base_dir, db_path)
+            
             cls._instance._init_db()
         return cls._instance
 
