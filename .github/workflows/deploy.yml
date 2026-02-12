@@ -1,0 +1,36 @@
+name: Deploy Bot
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+
+    steps:
+      - name: Kill existing bot
+        shell: powershell
+        run: |
+          Get-Process python -ErrorAction SilentlyContinue | Where-Object {
+              $_.Path -like "*C:\Users\Administrator\Desktop\DiscordBots\Gaddar*"
+          } | Stop-Process -Force
+
+      - name: Update code
+        shell: powershell
+        run: |
+          cd C:\Users\Administrator\Desktop\DiscordBots\Gaddar
+          git pull
+
+      - name: Install dependencies
+        shell: powershell
+        run: |
+          cd C:\Users\Administrator\Desktop\DiscordBots\Gaddar
+          C:\Users\Administrator\Desktop\DiscordBots\Gaddar\venv\Scripts\pip install -r requirements.txt
+
+      - name: Start bot
+        shell: powershell
+        run: |
+          Start-Process "C:\Users\Administrator\Desktop\DiscordBots\Gaddar\run.bat" `
+            -WorkingDirectory "C:\Users\Administrator\Desktop\DiscordBots\Gaddar"

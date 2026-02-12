@@ -1,4 +1,4 @@
 @echo off
 cd /d "%~dp0"
-py main.py
+"venv\Scripts\python.exe" main.py
 pause
