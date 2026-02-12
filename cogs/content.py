@@ -197,6 +197,12 @@ class ContentView(discord.ui.View):
         output_parts = []
         current_data_idx = 0
         
+        # ANSI Escape Codes
+        ANSI_RESET = "\u001b[0m"
+        ANSI_BOLD = "\u001b[1;37m"
+        ANSI_CYAN = "\u001b[0;36m"
+        ANSI_YELLOW = "\u001b[0;33m"
+        
         for i, party_roles in enumerate(parties):
             party_len = len(party_roles)
             party_data = assignments[current_data_idx : current_data_idx + party_len] if assignments else []
@@ -216,8 +222,14 @@ class ContentView(discord.ui.View):
             w_player = min(w_player, 30)
             
             # Header
-            header = f"{'ROLE':<{w_role}} | {'PLAYER':<{w_player}}"
-            sep = "-" * len(header)
+            h_role = f"{'ROLE':<{w_role}}"
+            h_player = f"{'PLAYER':<{w_player}}"
+            
+            header = f"{ANSI_BOLD}{h_role}{ANSI_RESET} | {ANSI_BOLD}{h_player}{ANSI_RESET}"
+            
+            # Separator based on visual width
+            total_width = w_role + 3 + w_player
+            sep = "-" * total_width
             lines = [header, sep]
             
             for ridx, r_name in enumerate(party_roles):
@@ -227,14 +239,19 @@ class ContentView(discord.ui.View):
                 d_role = (r_name[:w_role-2] + "..") if len(r_name) > w_role else r_name
                 d_player = (u_str[:w_player-2] + "..") if len(u_str) > w_player else u_str
                 
-                lines.append(f"{d_role:<{w_role}} | {d_player:<{w_player}}")
+                d_role_padded = f"{d_role:<{w_role}}"
+                d_player_padded = f"{d_player:<{w_player}}"
+                
+                c_player = ANSI_YELLOW if u_str != "-" else ANSI_RESET
+                
+                lines.append(f"{ANSI_CYAN}{d_role_padded}{ANSI_RESET} | {c_player}{d_player_padded}{ANSI_RESET}")
             
             table_body = "\n".join(lines)
             
             if len(parties) > 1:
-                output_parts.append(f"**Parti {i+1}**\n```prolog\n{table_body}\n```")
+                output_parts.append(f"**Parti {i+1}**\n```ansi\n{table_body}\n```")
             else:
-                output_parts.append(f"```prolog\n{table_body}\n```")
+                output_parts.append(f"```ansi\n{table_body}\n```")
 
         return "\n".join(output_parts)
 
